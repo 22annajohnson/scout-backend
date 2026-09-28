@@ -35,9 +35,9 @@ class ChangeDetectionTests(unittest.TestCase):
         self.git("commit", "-qm", "fixture")
         return self.git("rev-parse", "HEAD")
 
-    def check(self, docs, config):
+    def check(self, docs, config, backend=False):
         self.assertEqual(changes.selected_checks("pull_request", self.base, self.commit()),
-                         {"docs": docs, "config": config})
+                         {"docs": docs, "config": config, "backend": backend})
 
     def test_docs_only(self):
         Path("README.md").write_text("Updated\n")
@@ -55,7 +55,7 @@ class ChangeDetectionTests(unittest.TestCase):
     def test_source_or_image_only_skips_repository_checks(self):
         Path("Example.java").write_text("class Example {}\n")
         Path("diagram.png").write_bytes(b"image fixture")
-        self.check(False, False)
+        self.check(False, False, True)
 
     def test_deleted_docs(self):
         Path("README.md").unlink()
@@ -70,10 +70,30 @@ class ChangeDetectionTests(unittest.TestCase):
             file = Path(".github/scripts") / name
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_text("# fixture\n")
-            self.check(True, True)
+            self.check(True, True, name == "ci-changes.py")
+
+    def test_backend_build_and_resources(self):
+        for name in ["pom.xml", "mvnw", ".mvn/wrapper/maven-wrapper.properties",
+                     "src/main/resources/application.properties"]:
+            file = Path(name)
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text("fixture")
+            self.check(False, False, True)
+
+    def test_backend_resource_yaml(self):
+        file = Path("src/main/resources/application.yaml")
+        file.parent.mkdir(parents=True)
+        file.write_text("enabled: true")
+        self.check(False, True, True)
+
+    def test_workflow_runs_all(self):
+        file = Path(".github/workflows/repository-validation.yml")
+        file.parent.mkdir(parents=True)
+        file.write_text("# fixture")
+        self.check(True, True, True)
 
     def test_manual_and_missing_baselines(self):
-        expected = {"docs": True, "config": True}
+        expected = {"docs": True, "config": True, "backend": True}
         self.assertEqual(changes.selected_checks("workflow_dispatch", self.base, self.base), expected)
         for base in ["", "0" * 40, "f" * 40]:
             self.assertEqual(changes.selected_checks("push", base, self.base), expected)
@@ -86,7 +106,7 @@ class ChangeDetectionTests(unittest.TestCase):
                        capture_output=True, env={**os.environ, "EVENT_NAME": "pull_request",
                        "BASE_SHA": self.base, "HEAD_SHA": head, "GITHUB_OUTPUT": str(output)})
         self.assertEqual(output.read_text().splitlines(),
-                         ["should-run-docs=true", "should-run-config=false"])
+                         ["should-run-docs=true", "should-run-config=false", "should-run-backend=false"])
 
 
 class ValidatorTests(unittest.TestCase):

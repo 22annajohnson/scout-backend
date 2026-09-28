@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Select docs/config checks independently; unknown baselines run both."""
+"""Select docs/config/backend checks independently; unknown baselines run all."""
 import os
 import subprocess
 
 
 def selected_checks(event, base, head):
-    all_checks = {"docs": True, "config": True}
+    all_checks = {"docs": True, "config": True, "backend": True}
     if event == "workflow_dispatch" or not base or set(base) == {"0"}:
         return all_checks
     try:
@@ -30,7 +30,17 @@ def selected_checks(event, base, head):
         or (path.startswith(b".github/") and not path.lower().endswith(b".md"))
         for path in paths
     )
-    return {"docs": docs, "config": config}
+    backend = any(
+        not path.lower().endswith(b".md") and (
+            path.startswith((b"src/", b".mvn/"))
+            or path.lower().endswith(b".java")
+            or path in (b"pom.xml", b"mvnw", b"mvnw.cmd", b".env.example",
+                        b".github/scripts/ci-changes.py",
+                        b".github/tests/test_ci.py",
+                        b".github/workflows/repository-validation.yml")
+        ) for path in paths
+    )
+    return {"docs": docs, "config": config, "backend": backend}
 
 
 if __name__ == "__main__":
