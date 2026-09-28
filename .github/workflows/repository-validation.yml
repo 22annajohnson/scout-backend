@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      backend: ${{ steps.changes.outputs.should-run-backend }}
       docs: ${{ steps.changes.outputs.should-run-docs }}
       config: ${{ steps.changes.outputs.should-run-config }}
     steps:
@@ -63,15 +64,52 @@ jobs:
       - name: Test CI guards
         run: python3 -m unittest discover -s .github/tests -v
 
+  backend:
+    name: Java build and tests
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: scout_test
+          POSTGRES_USER: scout_test
+          POSTGRES_PASSWORD: local-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scout_test -d scout_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build and test with isolated PostgreSQL
+        env:
+          TEST_POSTGRES: 'true'
+          DATABASE_URL: jdbc:postgresql://localhost:5432/scout_test
+          DATABASE_USERNAME: scout_test
+          DATABASE_PASSWORD: local-ci-only
+        run: ./mvnw --batch-mode --no-transfer-progress verify
+
   required:
     name: Repository validation
     if: always()
-    needs: [changes, docs, config]
+    needs: [changes, docs, config, backend]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Check results
         env:
+          BACKEND_REQUIRED: ${{ needs.changes.outputs.backend }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
           DETECTION: ${{ needs.changes.result }}
           DOCS_REQUIRED: ${{ needs.changes.outputs.docs }}
           DOCS_RESULT: ${{ needs.docs.result }}
@@ -89,3 +127,4 @@ jobs:
           }
           check_result "$DOCS_REQUIRED" "$DOCS_RESULT"
           check_result "$CONFIG_REQUIRED" "$CONFIG_RESULT"
+          check_result "$BACKEND_REQUIRED" "$BACKEND_RESULT"

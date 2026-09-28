@@ -1,56 +1,44 @@
 # Repository CI
 
-Adapted from the merged scout-ios CI and review conventions.
+PRs to `develop`, pushes to `develop`, and manual runs use one required status:
+`Repository validation`. It fails when detection or any selected check fails.
+Intentional skips pass; failed/cancelled required jobs do not.
 
-## What runs
+| Changed files | Documentation | YAML / CI | Java build / tests |
+| --- | --- | --- | --- |
+| Markdown only | Run | Skip | Skip |
+| Java, Maven wrapper, pom.xml, source resources | Skip | Run if YAML | Run |
+| YAML outside Java resources | Skip | Run | Skip |
+| Mixed docs and Java | Run | As needed | Run |
+| Shared detector or validation workflow | Run | Run | Run |
+| CI guard tests | Skip | Run | Run |
+| Other files | Skip | As needed | Skip |
+| Manual run or unknown baseline | Run | Run | Run |
 
-| Changed files | Documentation checks | YAML and CI checks |
-| --- | --- | --- |
-| Markdown only | Run | Skip |
-| YAML only | Skip | Run |
-| Markdown and YAML | Run | Run |
-| Validator, shared detector, or validation workflow | Run when Markdown validation is affected | Run |
-| Other files only | Skip | Skip |
-| Manual run or missing baseline | Run | Run |
+Markdown checks validate UTF-8, conflict markers and balanced fences. YAML checks
+validate syntax and basic workflow shape, not every Actions expression. Validator
+and configuration changes run their corresponding checks. Deleted/renamed paths
+are included; PR comparisons use the merge commit against the base.
 
-Markdown checks validate UTF-8, merge-conflict markers, and balanced code fences.
-YAML checks validate syntax and basic GitHub workflow/job structure, including
-YAML outside `.github`. These are not full Actions expression or shell lint checks.
-Changes to the Markdown configuration also run its validator.
+Java uses Temurin 21 and `./mvnw verify`, including a PostgreSQL 17 service and a
+local JWKS test server. It needs no repository secrets or live Supabase account.
+The database password in the workflow is only for the disposable CI service.
 
-A small change-detection job and final `Repository validation` status always run.
-The final status fails if detection fails or a selected check fails; intentional
-skips pass. PRs compare the merge commit to its base. Pushes compare the previous
-and new commits. Deleted/renamed paths and unusual filenames are handled.
+Actions are pinned, permissions are read-only, checkout credentials are not
+persisted, and superseded runs are cancelled. Java has a 15-minute timeout;
+other jobs have five minutes. Dependabot checks Actions weekly and Maven monthly,
+grouping Maven minor/patch updates with two open PRs per ecosystem maximum.
 
-Workflows run for PRs to `develop`, pushes to `develop`, and manual dispatch.
-Actions use immutable pins and read-only permissions. Checkout credentials are
-not persisted. Jobs have five-minute timeouts; superseded runs are cancelled.
-Dependabot checks GitHub Actions weekly against `develop`, with two open PRs max.
-No branch-protection settings or deployment workflows are changed.
-
-## Local validation
-
-From the repository root:
+## Local checks
 
 ```sh
+./mvnw --batch-mode --no-transfer-progress verify
 ruby .github/scripts/validate-markdown.rb
 ruby .github/scripts/validate-yaml.rb
 python3 -m unittest discover -s .github/tests -v
 ```
 
-Tests cover filtering, deleted/renamed files, missing baselines, GitHub outputs,
-and valid/invalid Markdown and YAML. Review formats and label transitions live
-in [AI_REVIEW.md](AI_REVIEW.md). Label updates are manual, not automated.
-
-## Backend coverage
-
-The repository currently has no Java sources, Maven/Gradle manifest, wrapper, or
-test suite. This workflow validates documentation and configuration only. A green
-`Repository validation` status is not a successful backend build or test run.
-
-The story that adds the backend project must also add its actual build/test CI,
-using that project's chosen JDK and wrapper. Run it for source, tests, resources,
-build/dependency configuration, and its workflow; skip it for documentation-only
-changes. Keep documentation checks independent. Add dependency updates for the
-selected build tool then. No iOS, Supabase, or deployment jobs are included here.
+The PostgreSQL test skips unless `TEST_POSTGRES=true` plus database environment
+variables are supplied. CI always enables it. See the [README](../README.md).
+Review formats and label transitions are in [AI_REVIEW.md](AI_REVIEW.md).
+No branch protection or deployment settings are changed by this workflow.
